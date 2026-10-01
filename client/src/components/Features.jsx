@@ -1,0 +1,6 @@
+import './Features.css'
+
+const features = [{ title: 'Fast results', text: 'Scan in seconds', icon: <><path d="M13 2 4 15h7l-1 7 9-13h-7l1-7Z" /><path d="M20 5h2M21 4v2" /></> }, { title: 'Private', text: 'Your data stays yours', icon: <><rect x="5" y="10" width="14" height="11" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /><path d="M12 14v3" /></> }, { title: 'History', text: 'See past checks', icon: <><path d="M4 12a8 8 0 1 0 2.3-5.7" /><path d="M4 5v5h5M12 7v5l3 2" /></> }]
+
+function Features() { return <section className="features-section" id="features"><div className="container"><div className="section-heading reveal"><p className="eyebrow">Built for peace of mind</p><h2>A smarter way to stay safe online.</h2><p>Simple protection that fits into your everyday browsing, without slowing you down.</p></div><div className="feature-grid">{features.map((feature, index) => <article className="feature-card reveal" style={{ transitionDelay: `${index * 90}ms` }} key={feature.title}><div className="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{feature.icon}</svg></div><h3>{feature.title}</h3><p>{feature.text}</p><span className="card-arrow" aria-hidden="true">&#8599;</span></article>)}</div></div></section> }
+export default Features

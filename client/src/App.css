@@ -1,0 +1,10 @@
+.app-shell { overflow: hidden; }
+.container { width: min(var(--content-width), calc(100% - 72px)); margin: 0 auto; }
+.reveal { opacity: 0; transform: translateY(28px); transition: opacity 700ms ease, transform 700ms ease; }
+.reveal.is-visible { opacity: 1; transform: translateY(0); }
+.section-heading { max-width: 620px; margin-bottom: 48px; }
+.eyebrow { margin: 0 0 14px; color: var(--cyan); font-size: 0.78rem; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; }
+.section-heading h2 { margin: 0 0 16px; font-size: clamp(2rem, 4vw, 3.2rem); line-height: 1.08; letter-spacing: -0.055em; }
+.section-heading p { margin: 0; color: var(--muted); line-height: 1.75; }
+.fallback-page { min-height: calc(100vh - 150px); }
+@media (max-width: 640px) { .container { width: min(100% - 36px, var(--content-width)); } }

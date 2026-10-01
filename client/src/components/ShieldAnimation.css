@@ -1,0 +1,44 @@
+.hero-visual {
+  position: relative;
+  min-height: 440px;
+  overflow: hidden;
+  border: 1px solid rgba(125, 211, 252, 0.12);
+  border-radius: 28px;
+  background: linear-gradient(145deg, rgba(16, 30, 54, 0.84), rgba(8, 18, 35, 0.6));
+  box-shadow: var(--shadow);
+}
+.visual-grid { position: absolute; inset: 0; opacity: 0.42; background-image: linear-gradient(rgba(125, 211, 252, 0.06) 1px, transparent 1px), linear-gradient(90deg, rgba(125, 211, 252, 0.06) 1px, transparent 1px); background-size: 42px 42px; mask-image: radial-gradient(circle, black, transparent 70%); }
+.shield-stage { position: absolute; top: 50%; left: 50%; width: min(72%, 340px); aspect-ratio: 1 / 1.16; transform: translate(-50%, -50%); }
+.shield-svg { position: relative; z-index: 2; width: 100%; height: 100%; overflow: visible; }
+.shield-fill { opacity: 0.12; animation: fillShield 1.2s 0.7s ease-out both; }
+.shield-outline { stroke-dasharray: 670; stroke-dashoffset: 670; animation: drawShield 1.35s ease-out forwards; }
+.shield-check, .shield-cross { stroke-dasharray: 180; stroke-dashoffset: 180; opacity: 0; }
+.shield-check.show { opacity: 1; animation: drawCheck 650ms 150ms ease-out forwards, checkBounce 500ms 800ms ease both; }
+.shield-cross.show { opacity: 1; animation: drawCheck 520ms 120ms ease-out forwards, crossShake 420ms 650ms ease both; }
+.scan-line { opacity: 0; animation: scan 3s 1.4s ease-in-out infinite; }
+.is-scanning .scan-line { animation-duration: 1.2s; opacity: 1; }
+.shield-glow { position: absolute; inset: 14%; z-index: 0; border-radius: 50%; background: rgba(34, 211, 238, 0.16); filter: blur(40px); animation: glowPulse 3.5s ease-in-out infinite; }
+.is-risky .shield-glow { background: rgba(239, 68, 68, 0.17); }
+.shield-orbit { position: absolute; top: 50%; left: 50%; border: 1px solid rgba(34, 211, 238, 0.15); border-radius: 50%; transform: translate(-50%, -50%); }
+.orbit-one { width: 72%; aspect-ratio: 1; animation: orbitPulse 3.6s ease-out infinite; }
+.orbit-two { width: 82%; aspect-ratio: 1; border-style: dashed; opacity: 0; }
+.is-scanning .orbit-two { opacity: 1; animation: spinOrbit 2.2s linear infinite; border-color: rgba(34, 211, 238, 0.48); }
+.particle { position: absolute; z-index: 3; width: 5px; height: 5px; border-radius: 50%; background: var(--cyan); box-shadow: 0 0 14px var(--cyan); animation: floatParticle 4s ease-in-out infinite; }
+.scan-label { position: absolute; bottom: -1px; left: 50%; z-index: 4; display: flex; align-items: center; gap: 8px; transform: translateX(-50%); padding: 11px 16px; border: 1px solid rgba(125, 211, 252, 0.15); border-bottom: 0; border-radius: 12px 12px 0 0; background: rgba(11, 25, 46, 0.86); color: #9cb6d2; font-size: 0.76rem; font-weight: 600; white-space: nowrap; }
+.label-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--cyan); box-shadow: 0 0 9px var(--cyan); }
+.scan-label.active .label-dot { animation: labelPulse 800ms ease-in-out infinite; }
+.scan-label.complete { color: #a7f3d0; }
+.scan-label.complete .label-dot { background: var(--green); box-shadow: 0 0 9px var(--green); }
+.is-risky .scan-label.complete { color: #fecaca; }
+.is-risky .scan-label.complete .label-dot { background: var(--red); box-shadow: 0 0 9px var(--red); }
+@keyframes drawShield { to { stroke-dashoffset: 0; } }
+@keyframes fillShield { from { opacity: 0; } to { opacity: 0.18; } }
+@keyframes drawCheck { to { stroke-dashoffset: 0; } }
+@keyframes checkBounce { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
+@keyframes crossShake { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-4px); } 75% { transform: translateX(4px); } }
+@keyframes scan { 0%, 100% { opacity: 0; transform: translateY(-70px); } 20%, 80% { opacity: 0.85; } 50% { transform: translateY(70px); } }
+@keyframes glowPulse { 0%, 100% { transform: scale(0.88); opacity: 0.5; } 50% { transform: scale(1.12); opacity: 1; } }
+@keyframes orbitPulse { 0%, 100% { opacity: 0.14; transform: translate(-50%, -50%) scale(0.9); } 50% { opacity: 0.42; transform: translate(-50%, -50%) scale(1.1); } }
+@keyframes spinOrbit { to { transform: translate(-50%, -50%) rotate(360deg); } }
+@keyframes floatParticle { 0%, 100% { opacity: 0.35; transform: translate(0, 0); } 50% { opacity: 1; transform: translate(8px, -16px); } }
+@keyframes labelPulse { 50% { transform: scale(0.6); opacity: 0.45; } }

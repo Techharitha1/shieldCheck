@@ -1,0 +1,6 @@
+import { useEffect, useState } from 'react'
+import './StatCard.css'
+
+const iconPaths = { checks: <><rect x="4" y="5" width="16" height="14" rx="2" /><path d="M8 9h8M8 13h5" /></>, safe: <><path d="M12 3 19 6v5c0 5-3 8-7 10-4-2-7-5-7-10V6l7-3Z" /><path d="m8.5 12 2.2 2.2 4.8-5" /></>, suspicious: <><path d="M12 3 21 20H3L12 3Z" /><path d="M12 9v4M12 17h.01" /></>, risky: <><circle cx="12" cy="12" r="8" /><path d="m9 9 6 6m0-6-6 6" /></> }
+function StatCard({ label, value, tone, icon }) { const [displayValue, setDisplayValue] = useState(0); useEffect(() => { let frame; const start = performance.now(); const tick = (now) => { const progress = Math.min((now - start) / 650, 1); setDisplayValue(Math.round(value * progress)); if (progress < 1) frame = requestAnimationFrame(tick) }; frame = requestAnimationFrame(tick); return () => cancelAnimationFrame(frame) }, [value]); return <article className={`stat-card stat-${tone}`}><div className="stat-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{iconPaths[icon]}</svg></div><div><span>{label}</span><strong>{displayValue}</strong></div></article> }
+export default StatCard

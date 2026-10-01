@@ -1,0 +1,6 @@
+import { useEffect, useRef } from 'react'
+import './StepsLine.css'
+
+const steps = [{ number: '01', title: 'Paste a link', text: 'Start with the link, file, or account you want to understand.' }, { number: '02', title: 'Scan with security checks', text: 'We look at phishing, malware, SSL, domain age, reputation, and redirects.' }, { number: '03', title: 'See the risk score', text: 'A clear score and verdict help you decide what to do next.' }, { number: '04', title: 'Learn and stay safe', text: 'Build simple habits that make suspicious requests easier to spot.' }]
+function StepsLine() { const ref = useRef(null); useEffect(() => { const observer = new IntersectionObserver(([entry]) => { if (entry.isIntersecting) { entry.target.classList.add('steps-visible'); observer.disconnect() } }, { threshold: 0.25 }); if (ref.current) observer.observe(ref.current); return () => observer.disconnect() }, []); return <section className="about-section steps-section" ref={ref}><div className="about-section-heading"><p className="eyebrow">How it works</p><h2>Clarity from first click to final answer.</h2></div><div className="steps-line-grid">{steps.map((step) => <article className="about-step" key={step.number}><div className="step-node">{step.number}</div><h3>{step.title}</h3><p>{step.text}</p></article>)}</div></section> }
+export default StepsLine

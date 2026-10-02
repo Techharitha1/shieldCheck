@@ -19,7 +19,7 @@ const TRUSTED = [
   'amazon.com', 'amazon.in', 'apple.com', 'myntra.com', 'flipkart.com',
   'linkedin.com', 'twitter.com', 'x.com', 'facebook.com', 'instagram.com',
   'netflix.com', 'stackoverflow.com', 'paypal.com', 'zomato.com',
-];
+  'pw.live', 'meesho.com', 'swiggy.com', 'paytm.com', 'phonepe.com', 'irctc.co.in', 'nykaa.com', 'ajio.com', 'canva.com', 'reddit.com', 'whatsapp.com', 'zoom.us', 'python.org'];
 const RISKY_TLDS = ['.xyz', '.top', '.tk', '.click', '.work', '.zip'];
 const KEYWORDS = ['free', 'prize', 'win', 'verify', 'login', 'secure', 'account', 'update', 'confirm', 'bonus', 'gift'];
 const SHORTENERS = ['bit.ly', 'tinyurl.com', 't.co', 'goo.gl'];
@@ -106,12 +106,95 @@ function analyze(raw) {
       ? ['Open this link only if you trust the sender.', 'Do not enter passwords or payment details.', 'Search for the official site instead.']
       : ['Do not open this link.', 'Never enter personal or payment details.', 'Report the message and delete it.'];
 
-  return { url: input, host, riskScore, verdict, checks, recommendations, checkedAt: new Date().toISOString() };
+     return { url: input, host, riskScore, verdict, checks, recommendations, checkedAt: new Date().toISOString(), trusted };
 }
 
 app.get('/', (req, res) => {
   res.send('ShieldCheck server is running');
 });
+const ageCache = new Map();
+const SECOND_LEVEL = ['co', 'com', 'org', 'net', 'gov', 'ac', 'edu'];
+
+function registrable(host) {
+  const parts = host.split('.');
+  if (parts.length <= 2) return host;
+  const last = parts[parts.length - 1];
+  const second = parts[parts.length - 2];
+  if (last.length === 2 && SECOND_LEVEL.includes(second)) return parts.slice(-3).join('.');
+  return parts.slice(-2).join('.');
+}
+
+async function getDomainDate(domain) {
+  const cached = ageCache.get(domain);
+  if (cached && Date.now() - cached.at < 86400000) return cached.date;
+  const response = await fetch('https://rdap.org/domain/' + domain, {
+    headers: { Accept: 'application/rdap+json' },
+    signal: AbortSignal.timeout(3500),
+  });
+  if (!response.ok) throw new Error('RDAP ' + response.status);
+  const data = await response.json();
+  const event = (data.events || []).find((e) => e.eventAction === 'registration');
+  const date = event ? event.eventDate : null;
+  ageCache.set(domain, { date, at: Date.now() });
+  return date;
+}
+async function applyDomainAge(result) {
+  const host = result.host;
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(host)) return;
+  if (TRUSTED.some((d) => host === d || host.endsWith('.' + d))) return;
+  try {
+    const date = await getDomainDate(registrable(host));
+    if (!date) return;
+    const days = Math.floor((Date.now() - new Date(date).getTime()) / 86400000);
+    if (!(days >= 0)) return;
+    const years = Math.floor(days / 365);
+
+    const get = (n) => result.checks.find((c) => c.name === n);
+    const set = (c, status, safety, text) => {
+      c.status = status;
+      c.safety = safety;
+      c.explanation = text;
+    };
+    const age = get('Domain age');
+    const rep = get('Reputation');
+    const priorRisk = result.riskScore;
+    const repWasDefault = rep.explanation === 'No reputation data for this site yet.';
+
+    if (days < 30) set(age, 'fail', 10, 'Registered only ' + days + ' days ago. Very new sites are a common scam sign.');
+    else if (days < 180) set(age, 'warning', 35, 'Registered about ' + Math.round(days / 30) + ' months ago. Fairly new.');
+    else if (days < 365) set(age, 'warning', 60, 'Registered less than a year ago.');
+    else if (years < 5) set(age, 'pass', 85, 'Registered ' + years + (years > 1 ? ' years' : ' year') + ' ago.');
+    else set(age, 'pass', 95, 'Registered ' + years + ' years ago, so it is well established.');
+
+    const clean = ['Phishing', 'Malware', 'SSL certificate', 'Redirects'].every((n) => get(n).status === 'pass');
+    if (repWasDefault && clean && years >= 3) {
+      set(rep, 'pass', years >= 5 ? 85 : 75, 'Established site with no warning signs.');
+    }
+    result.domainAgeChecked = true;
+
+    const avg = result.checks.reduce((s, c) => s + c.safety, 0) / result.checks.length;
+    let risk = Math.round(100 - avg);
+    if (!clean || !repWasDefault) risk = Math.max(risk, priorRisk);
+    if (days < 30) risk = Math.max(risk, 55);
+    else if (days < 180) risk = Math.max(risk, 35);
+    risk = Math.min(100, Math.max(0, risk));
+
+    const verdict = risk <= 30 ? 'Safe' : risk <= 60 ? 'Suspicious' : 'Risky';
+    if (verdict !== result.verdict) {
+      result.recommendations =
+        verdict === 'Safe'
+          ? ['You can open this link.', 'Still avoid entering passwords unless you trust the page.', 'Check the address bar for spelling mistakes.']
+          : verdict === 'Suspicious'
+          ? ['Open this link only if you trust the sender.', 'Do not enter passwords or payment details.', 'Search for the official site instead.']
+          : ['Do not open this link.', 'Never enter personal or payment details.', 'Report the message and delete it.'];
+    }
+    result.riskScore = risk;
+    result.verdict = verdict;
+  } catch (err) {
+    console.error('Domain age lookup failed:', err.message);
+  }
+}
+
 async function applyGoogle(result) {
   const key = process.env.SAFE_BROWSING_KEY;
   if (!key) return;
@@ -172,7 +255,8 @@ app.post('/api/check', async (req, res) => {
   if (!result) {
     return res.status(400).json({ error: 'Enter a valid link, e.g. https://example.com' });
   }
-  await applyGoogle(result);
+   await applyDomainAge(result);
+   await applyGoogle(result);
   const header = req.headers.authorization || '';
   const token = header.startsWith('Bearer ') ? header.slice(7) : null;
   if (token) {

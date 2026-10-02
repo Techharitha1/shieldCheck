@@ -11,7 +11,7 @@ import FindingsList from '../components/FindingsList'
 import Recommendations from '../components/Recommendations'
 import useHistory from '../hooks/useHistory'
 import useAuth from '../hooks/useAuth'
-import apiRequest from '../utils/api'
+import { checkLink } from '../utils/api'
 import isValidLink from '../utils/validateLink'
 import './ResultPage.css'
 
@@ -47,7 +47,7 @@ function ResultPage() {
     let active = true
     setScanning(true)
     setScanError('')
-    const request = apiRequest('/api/check', { method: 'POST', body: { url: cleanedQueryUrl } }).then((data) => ({
+    const request = checkLink(cleanedQueryUrl).then((data) => ({
       ...data,
       date: data.checkedAt || new Date().toISOString(),
       checks: (data.checks || []).map((check) => ({ ...check, score: check.safety ?? check.score })),
@@ -68,6 +68,6 @@ function ResultPage() {
   if (id && !savedLoading && (savedError || !savedResult)) return <div className="app-shell result-shell"><Navbar /><main className="fallback-page"><div className="fallback-icon" aria-hidden="true">?</div><h1>Result not found</h1><p>This saved check may have been deleted.</p><a className="button button-primary" href="/history">Back to history <span aria-hidden="true">?</span></a></main><Footer /></div>
   if (scanError) return <div className="app-shell result-shell"><Navbar /><main className="fallback-page"><div className="fallback-icon" aria-hidden="true">!</div><h1>We couldn't check that link</h1><p>{scanError}</p><button className="button button-primary" type="button" onClick={() => window.location.assign('/')}>Try again</button></main><Footer /></div>
   if (!result && !scanning) return <div className="app-shell result-shell"><Navbar /><main className="fallback-page"><p>Loading result...</p></main><Footer /></div>
-  return <div className="app-shell result-shell"><Navbar /><main>{scanning ? <ScanningView url={url} completedChecks={completedChecks} /> : <div className="result-page"><div className="result-container"><VerdictBanner result={result} /><div className="charts-grid"><RiskGauge score={100 - result.riskScore} /><DonutChart checks={result.checks} /></div><CheckBars checks={result.checks} /><FindingsList checks={result.checks} /><Recommendations result={result} saved={Boolean(id)} /></div></div>}</main><Footer /></div>
+  return <div className="app-shell result-shell"><Navbar /><main>{scanning ? <ScanningView url={url} completedChecks={completedChecks} /> : <div className="result-page"><div className="result-container"><VerdictBanner result={result} /><div className="charts-grid"><RiskGauge score={100 - result.riskScore} trusted={result.trusted} /><DonutChart checks={result.checks} /></div><CheckBars checks={result.checks} /><FindingsList checks={result.checks} /><Recommendations result={result} saved={Boolean(id)} /><p className="result-disclaimer">No tool is 100% accurate. If you are unsure, do not enter passwords or payment details.</p></div></div>}</main><Footer /></div>
 }
 export default ResultPage

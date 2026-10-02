@@ -7,6 +7,12 @@ const PORT = process.env.PORT || 5000;
 
 app.use(cors());
 app.use(express.json());
+const { router: authRouter } = require('./auth');
+app.use('/api/auth', authRouter);
+const jwt = require('jsonwebtoken');
+const pool = require('./db');
+const historyRouter = require('./history');
+app.use('/api/history', historyRouter);
 
 const TRUSTED = [
   'google.com', 'youtube.com', 'github.com', 'microsoft.com', 'wikipedia.org',
@@ -89,11 +95,27 @@ app.get('/', (req, res) => {
   res.send('ShieldCheck server is running');
 });
 
-app.post('/api/check', (req, res) => {
+app.post('/api/check', async (req, res) => {
   const result = analyze(req.body && req.body.url);
   if (!result) {
     return res.status(400).json({ error: 'Enter a valid link, e.g. https://example.com' });
   }
+
+  const header = req.headers.authorization || '';
+  const token = header.startsWith('Bearer ') ? header.slice(7) : null;
+  if (token) {
+    try {
+      const payload = jwt.verify(token, process.env.JWT_SECRET);
+      const saved = await pool.query(
+        'INSERT INTO checks (user_id, url, host, verdict, risk_score, result) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id',
+        [payload.id, result.url, result.host, result.verdict, result.riskScore, result]
+      );
+      result.id = saved.rows[0].id;
+    } catch (err) {
+      console.error(err.message);
+    }
+  }
+
   res.json(result);
 });
 

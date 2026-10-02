@@ -23,7 +23,8 @@ const TRUSTED = [
 const RISKY_TLDS = ['.xyz', '.top', '.tk', '.click', '.work', '.zip'];
 const KEYWORDS = ['free', 'prize', 'win', 'verify', 'login', 'secure', 'account', 'update', 'confirm', 'bonus', 'gift'];
 const SHORTENERS = ['bit.ly', 'tinyurl.com', 't.co', 'goo.gl'];
-
+const PIRACY = ['movierulz', 'tamilrockers', 'filmyzilla', 'filmywap', 'hdhub4u', '9xmovies', '123movies', 'fmovies', 'putlocker', 'moviesda', 'isaimini', 'vegamovies', 'bolly4u', 'worldfree4u', 'camrip', 'hdrip', 'freemovies', 'free-movies', 'watchfree'];
+const BLOCKLIST = ['ibomma.com'];
 function analyze(raw) {
   let input = String(raw || '').trim();
   if (!input) return null;
@@ -46,7 +47,8 @@ function analyze(raw) {
   const isShort = SHORTENERS.includes(host);
   const subdomains = host.split('.').length - 2;
   const hyphens = (host.match(/-/g) || []).length;
-
+  const blocked = BLOCKLIST.some((d) => host === d || host.endsWith('.' + d));
+    const piracyHit = PIRACY.some((k) => host.includes(k));
   const checks = [];
 
   if (trusted) checks.push({ name: 'Phishing', status: 'pass', safety: 98, explanation: 'No phishing signs found on this trusted site.' });
@@ -78,7 +80,23 @@ function analyze(raw) {
   const failed = (n) => checks.find((c) => c.name === n).status === 'fail';
   if (failed('Phishing') || failed('Malware') || failed('Reputation')) riskScore = Math.max(riskScore, 80);
   else if (failed('SSL certificate') || failed('Redirects')) riskScore = Math.max(riskScore, 45);
-  riskScore = Math.min(100, riskScore);
+  const warnings = checks.filter((c) => c.status === 'warning').length;
+   if (!trusted && warnings >= 2 && (riskyTld || isShort || hits.length > 0)) riskScore = Math.max(riskScore, riskyTld ? 45 : 32);
+    if (blocked) {
+    const rep = checks.find((c) => c.name === 'Reputation');
+    rep.status = 'fail';
+    rep.safety = 20;
+    rep.explanation = 'This site is known for illegal or unsafe content.';
+    riskScore = Math.max(riskScore, 65);
+  }
+    if (piracyHit && !blocked) {
+    const rep = checks.find((c) => c.name === 'Reputation');
+    rep.status = 'warning';
+    rep.safety = 35;
+    rep.explanation = 'The name looks like a piracy or illegal streaming site.';
+    riskScore = Math.max(riskScore, 50);
+  }
+   riskScore = Math.min(100, riskScore);
 
   const verdict = riskScore <= 30 ? 'Safe' : riskScore <= 60 ? 'Suspicious' : 'Risky';
   const recommendations =
@@ -94,23 +112,85 @@ function analyze(raw) {
 app.get('/', (req, res) => {
   res.send('ShieldCheck server is running');
 });
+async function applyGoogle(result) {
+  const key = process.env.SAFE_BROWSING_KEY;
+  if (!key) return;
+  try {
+    const response = await fetch(
+      'https://safebrowsing.googleapis.com/v4/threatMatches:find?key=' + key,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          client: { clientId: 'shieldcheck', clientVersion: '1.0.0' },
+          threatInfo: {
+            threatTypes: ['MALWARE', 'SOCIAL_ENGINEERING', 'UNWANTED_SOFTWARE', 'POTENTIALLY_HARMFUL_APPLICATION'],
+            platformTypes: ['ANY_PLATFORM'],
+            threatEntryTypes: ['URL'],
+            threatEntries: [{ url: result.url }],
+          },
+        }),
+        signal: AbortSignal.timeout(4000),
+      }
+    );
+    if (!response.ok) {
+      console.error('Safe Browsing error:', response.status);
+      return;
+    }
+    const data = await response.json();
+    result.googleChecked = true;
+    if (!data.matches || !data.matches.length) return;
+
+    const types = data.matches.map((m) => m.threatType);
+    const phishing = types.includes('SOCIAL_ENGINEERING');
+    const note = 'Google Safe Browsing lists this link as dangerous.';
+    const fail = (name) => {
+      const c = result.checks.find((x) => x.name === name);
+      if (c) {
+        c.status = 'fail';
+        c.safety = 5;
+        c.explanation = note;
+      }
+    };
+    fail(phishing ? 'Phishing' : 'Malware');
+    fail('Reputation');
+    result.verdict = 'Risky';
+    result.riskScore = Math.max(result.riskScore, 95);
+    result.recommendations = [
+      'Do not open this link.',
+      'Never enter personal or payment details.',
+      'Report the message and delete it.',
+    ];
+  } catch (err) {
+    console.error('Safe Browsing failed:', err.message);
+  }
+}
+const recentChecks = new Map();
 
 app.post('/api/check', async (req, res) => {
   const result = analyze(req.body && req.body.url);
   if (!result) {
     return res.status(400).json({ error: 'Enter a valid link, e.g. https://example.com' });
   }
-
+  await applyGoogle(result);
   const header = req.headers.authorization || '';
   const token = header.startsWith('Bearer ') ? header.slice(7) : null;
   if (token) {
     try {
       const payload = jwt.verify(token, process.env.JWT_SECRET);
-      const saved = await pool.query(
-        'INSERT INTO checks (user_id, url, host, verdict, risk_score, result) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id',
-        [payload.id, result.url, result.host, result.verdict, result.riskScore, result]
-      );
-      result.id = saved.rows[0].id;
+      const key = payload.id + '|' + result.url;
+      let pending = recentChecks.get(key);
+      if (!pending) {
+        pending = pool
+          .query(
+            'INSERT INTO checks (user_id, url, host, verdict, risk_score, result) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id',
+            [payload.id, result.url, result.host, result.verdict, result.riskScore, result]
+          )
+          .then((saved) => saved.rows[0].id);
+        recentChecks.set(key, pending);
+        setTimeout(() => recentChecks.delete(key), 10000);
+      }
+      result.id = await pending;
     } catch (err) {
       console.error(err.message);
     }

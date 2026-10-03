@@ -261,14 +261,15 @@ async function applyGoogle(result) {
   }
 }
 const recentChecks = new Map();
-
 app.post('/api/check', async (req, res) => {
   const result = analyze(req.body && req.body.url);
   if (!result) {
     return res.status(400).json({ error: 'Enter a valid link, e.g. https://example.com' });
   }
-   await applyDomainAge(result);
-   await applyGoogle(result);
+
+  await applyDomainAge(result);
+  await applyGoogle(result);
+
   const header = req.headers.authorization || '';
   const token = header.startsWith('Bearer ') ? header.slice(7) : null;
   if (token) {
@@ -277,12 +278,18 @@ app.post('/api/check', async (req, res) => {
       const key = payload.id + '|' + result.url;
       let pending = recentChecks.get(key);
       if (!pending) {
-        pending = pool
-          .query(
+        pending = (async () => {
+          const recent = await pool.query(
+            "SELECT id FROM checks WHERE user_id = $1 AND url = $2 AND created_at > NOW() - INTERVAL '60 seconds' ORDER BY id DESC LIMIT 1",
+            [payload.id, result.url]
+          );
+          if (recent.rows.length) return recent.rows[0].id;
+          const saved = await pool.query(
             'INSERT INTO checks (user_id, url, host, verdict, risk_score, result) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id',
             [payload.id, result.url, result.host, result.verdict, result.riskScore, result]
-          )
-          .then((saved) => saved.rows[0].id);
+          );
+          return saved.rows[0].id;
+        })();
         recentChecks.set(key, pending);
         setTimeout(() => recentChecks.delete(key), 10000);
       }

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Navigate, useParams, useSearchParams } from 'react-router-dom'
 import Navbar from '../components/Navbar'
 import Footer from '../components/Footer'
@@ -20,6 +20,11 @@ function ResultPage() {
   const [searchParams] = useSearchParams()
   const { getById, addResult } = useHistory()
   const { user, authLoading } = useAuth()
+    const addResultRef = useRef(addResult)
+  addResultRef.current = addResult
+  const getByIdRef = useRef(getById)
+  getByIdRef.current = getById
+  const userId = user?.id ?? null
   const [savedResult, setSavedResult] = useState(null)
   const [savedLoading, setSavedLoading] = useState(Boolean(id))
   const [scanError, setScanError] = useState('')
@@ -35,18 +40,19 @@ function ResultPage() {
     if (!id) return undefined
     let active = true
     setSavedLoading(true)
-    getById(id).then((item) => {
+    getByIdRef.current(id).then((item) => {
       if (active && item) { setSavedResult(item); setResult(item) }
       if (active && !item) setSavedError(true)
     }).catch(() => { if (active) setSavedError(true) }).finally(() => { if (active) setSavedLoading(false) })
     return () => { active = false }
-  }, [getById, id])
+  }, [id])
 
-  useEffect(() => {
+   useEffect(() => {
     if (id || !cleanedQueryUrl || authLoading) return undefined
     let active = true
     setScanning(true)
     setScanError('')
+    setCompletedChecks(0)
     const request = checkLink(cleanedQueryUrl).then((data) => ({
       ...data,
       date: data.checkedAt || new Date().toISOString(),
@@ -57,12 +63,11 @@ function ResultPage() {
     Promise.all([request, scanTimer]).then(([data]) => {
       if (!active) return
       setResult(data)
-      if (!user) addResult(data)
+      if (!userId) addResultRef.current(data)
       setScanning(false)
     }).catch((error) => { if (active) { setScanError(error.message); setScanning(false) } })
     return () => { active = false; window.clearInterval(checkTimer) }
-  }, [addResult, authLoading, cleanedQueryUrl, id, user])
-
+  }, [authLoading, cleanedQueryUrl, id, userId])
   if (!id && !queryUrl) return <Navigate replace to="/" />
   if (!id && !cleanedQueryUrl) return <div className="app-shell result-shell"><Navbar /><main className="fallback-page"><div className="fallback-icon" aria-hidden="true">!</div><h1>We couldn't check that link</h1><p>Enter a full link, e.g. myntra.com</p><button className="button button-primary" type="button" onClick={() => window.location.assign('/')}>Try again</button></main><Footer /></div>
   if (id && !savedLoading && (savedError || !savedResult)) return <div className="app-shell result-shell"><Navbar /><main className="fallback-page"><div className="fallback-icon" aria-hidden="true">?</div><h1>Result not found</h1><p>This saved check may have been deleted.</p><a className="button button-primary" href="/history">Back to history <span aria-hidden="true">?</span></a></main><Footer /></div>

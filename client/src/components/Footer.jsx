@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import './Footer.css'
 
-const SHOW_VISITORS = true
+const SHOW_VISITORS = false
 
 const API = import.meta.env.VITE_API_URL
 const VISITOR_KEY = 'shieldcheck_visitor'

@@ -1,33 +1,60 @@
-const express = require('express');
-const cors = require('cors');
-require('dotenv').config();
+import express, { Request, Response } from 'express';
+import cors from 'cors';
+import dotenv from 'dotenv';
+import { rateLimit } from 'express-rate-limit';
+import jwt from 'jsonwebtoken';
+import pool from './db';
+import { router as authRouter } from './auth';
+import historyRouter from './history';
+
+dotenv.config();
+
+type Status = 'pass' | 'warning' | 'fail';
+type Verdict = 'Safe' | 'Suspicious' | 'Risky';
+
+interface Check {
+  name: string;
+  status: Status;
+  safety: number;
+  explanation: string;
+}
+
+interface CheckResult {
+  url: string;
+  host: string;
+  riskScore: number;
+  verdict: Verdict;
+  checks: Check[];
+  recommendations: string[];
+  checkedAt: string;
+  trusted: boolean;
+  id?: number;
+  googleChecked?: boolean;
+  domainAgeChecked?: boolean;
+}
 
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-   const allowedOrigins = [
-     'http://localhost:5173',
-     'http://127.0.0.1:5173',
-     ...(process.env.CLIENT_ORIGIN || '').split(',').map((s) => s.trim()).filter(Boolean),
-   ];
-   app.use(
-     cors({
-       origin: (origin, callback) => {
-         if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
-         callback(new Error('Not allowed by CORS'));
-       },
-     })
-   );
+const allowedOrigins = [
+  'http://localhost:5173',
+  'http://127.0.0.1:5173',
+  ...(process.env.CLIENT_ORIGIN || '').split(',').map((s) => s.trim()).filter(Boolean),
+];
+
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
+      callback(new Error('Not allowed by CORS'));
+    },
+  })
+);
 app.use(express.json());
-   const rateLimit = require('express-rate-limit');
-   app.set('trust proxy', 1);
-   app.use('/api/check', rateLimit({ windowMs: 60 * 1000, limit: 30, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many checks. Wait a minute and try again.' } }));
-   app.use('/api/auth', rateLimit({ windowMs: 15 * 60 * 1000, limit: 30, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many attempts. Try again in a few minutes.' } }));
-const { router: authRouter } = require('./auth');
+app.set('trust proxy', 1);
+app.use('/api/check', rateLimit({ windowMs: 60 * 1000, limit: 30, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many checks. Wait a minute and try again.' } }));
+app.use('/api/auth', rateLimit({ windowMs: 15 * 60 * 1000, limit: 30, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many attempts. Try again in a few minutes.' } }));
 app.use('/api/auth', authRouter);
-const jwt = require('jsonwebtoken');
-const pool = require('./db');
-   const historyRouter = require('./history').default;
 app.use('/api/history', historyRouter);
 
 const TRUSTED = [
@@ -35,18 +62,34 @@ const TRUSTED = [
   'amazon.com', 'amazon.in', 'apple.com', 'myntra.com', 'flipkart.com',
   'linkedin.com', 'twitter.com', 'x.com', 'facebook.com', 'instagram.com',
   'netflix.com', 'stackoverflow.com', 'paypal.com', 'zomato.com',
-  'pw.live', 'meesho.com', 'swiggy.com', 'paytm.com', 'phonepe.com', 'irctc.co.in', 'nykaa.com', 'ajio.com', 'canva.com', 'reddit.com', 'whatsapp.com', 'zoom.us', 'python.org'];
+  'pw.live', 'meesho.com', 'swiggy.com', 'paytm.com', 'phonepe.com', 'irctc.co.in', 'nykaa.com', 'ajio.com', 'canva.com', 'reddit.com', 'whatsapp.com', 'zoom.us', 'python.org',
+];
 const RISKY_TLDS = ['.xyz', '.top', '.tk', '.click', '.work', '.zip'];
 const KEYWORDS = ['free', 'prize', 'win', 'verify', 'login', 'secure', 'account', 'update', 'confirm', 'bonus', 'gift'];
 const SHORTENERS = ['bit.ly', 'tinyurl.com', 't.co', 'goo.gl'];
 const PIRACY = ['movierulz', 'tamilrockers', 'filmyzilla', 'filmywap', 'hdhub4u', '9xmovies', '123movies', 'fmovies', 'putlocker', 'moviesda', 'isaimini', 'vegamovies', 'bolly4u', 'worldfree4u', 'camrip', 'hdrip', 'freemovies', 'free-movies', 'watchfree'];
 const BLOCKLIST = ['ibomma.com'];
-function analyze(raw) {
+
+function isTrusted(host: string): boolean {
+  return TRUSTED.some((d) => host === d || host.endsWith('.' + d));
+}
+
+function recommend(verdict: Verdict): string[] {
+  if (verdict === 'Safe') {
+    return ['You can open this link.', 'Still avoid entering passwords unless you trust the page.', 'Check the address bar for spelling mistakes.'];
+  }
+  if (verdict === 'Suspicious') {
+    return ['Open this link only if you trust the sender.', 'Do not enter passwords or payment details.', 'Search for the official site instead.'];
+  }
+  return ['Do not open this link.', 'Never enter personal or payment details.', 'Report the message and delete it.'];
+}
+
+function analyze(raw: unknown): CheckResult | null {
   let input = String(raw || '').trim();
   if (!input) return null;
   if (!/^https?:\/\//i.test(input)) input = 'https://' + input;
 
-  let u;
+  let u: URL;
   try {
     u = new URL(input);
   } catch {
@@ -55,7 +98,7 @@ function analyze(raw) {
   const host = u.hostname.toLowerCase().replace(/^www\./, '');
   if (!host.includes('.') || host.length < 4) return null;
 
-  const trusted = TRUSTED.some((d) => host === d || host.endsWith('.' + d));
+  const trusted = isTrusted(host);
   const text = host + u.pathname.toLowerCase();
   const hits = KEYWORDS.filter((k) => text.includes(k));
   const riskyTld = RISKY_TLDS.some((t) => host.endsWith(t));
@@ -64,8 +107,8 @@ function analyze(raw) {
   const subdomains = host.split('.').length - 2;
   const hyphens = (host.match(/-/g) || []).length;
   const blocked = BLOCKLIST.some((d) => host === d || host.endsWith('.' + d));
-    const piracyHit = PIRACY.some((k) => host.includes(k));
-  const checks = [];
+  const piracyHit = PIRACY.some((k) => host.includes(k));
+  const checks: Check[] = [];
 
   if (trusted) checks.push({ name: 'Phishing', status: 'pass', safety: 98, explanation: 'No phishing signs found on this trusted site.' });
   else if (hits.length >= 2) checks.push({ name: 'Phishing', status: 'fail', safety: 10, explanation: 'The link uses bait words like "' + hits.slice(0, 2).join('" and "') + '".' });
@@ -91,47 +134,42 @@ function analyze(raw) {
   else if (isShort || subdomains > 3 || hyphens >= 3) checks.push({ name: 'Redirects', status: 'warning', safety: 40, explanation: 'The link may hide its real destination.' });
   else checks.push({ name: 'Redirects', status: 'pass', safety: 90, explanation: 'The link goes straight to its destination.' });
 
+  const get = (n: string) => checks.find((c) => c.name === n) as Check;
   const avg = checks.reduce((s, c) => s + c.safety, 0) / checks.length;
   let riskScore = Math.round(100 - avg);
-  const failed = (n) => checks.find((c) => c.name === n).status === 'fail';
+  const failed = (n: string) => get(n).status === 'fail';
   if (failed('Phishing') || failed('Malware') || failed('Reputation')) riskScore = Math.max(riskScore, 80);
   else if (failed('SSL certificate') || failed('Redirects')) riskScore = Math.max(riskScore, 45);
   const warnings = checks.filter((c) => c.status === 'warning').length;
-   if (!trusted && warnings >= 2 && (riskyTld || isShort || hits.length > 0)) riskScore = Math.max(riskScore, riskyTld ? 45 : 32);
-    if (blocked) {
-    const rep = checks.find((c) => c.name === 'Reputation');
+  if (!trusted && warnings >= 2 && (riskyTld || isShort || hits.length > 0)) riskScore = Math.max(riskScore, riskyTld ? 45 : 32);
+  if (blocked) {
+    const rep = get('Reputation');
     rep.status = 'fail';
     rep.safety = 20;
     rep.explanation = 'This site is known for illegal or unsafe content.';
     riskScore = Math.max(riskScore, 65);
   }
-    if (piracyHit && !blocked) {
-    const rep = checks.find((c) => c.name === 'Reputation');
+  if (piracyHit && !blocked) {
+    const rep = get('Reputation');
     rep.status = 'warning';
     rep.safety = 35;
     rep.explanation = 'The name looks like a piracy or illegal streaming site.';
     riskScore = Math.max(riskScore, 50);
   }
-   riskScore = Math.min(100, riskScore);
+  riskScore = Math.min(100, riskScore);
 
-  const verdict = riskScore <= 30 ? 'Safe' : riskScore <= 60 ? 'Suspicious' : 'Risky';
-  const recommendations =
-    verdict === 'Safe'
-      ? ['You can open this link.', 'Still avoid entering passwords unless you trust the page.', 'Check the address bar for spelling mistakes.']
-      : verdict === 'Suspicious'
-      ? ['Open this link only if you trust the sender.', 'Do not enter passwords or payment details.', 'Search for the official site instead.']
-      : ['Do not open this link.', 'Never enter personal or payment details.', 'Report the message and delete it.'];
-
-     return { url: input, host, riskScore, verdict, checks, recommendations, checkedAt: new Date().toISOString(), trusted };
+  const verdict: Verdict = riskScore <= 30 ? 'Safe' : riskScore <= 60 ? 'Suspicious' : 'Risky';
+  return { url: input, host, riskScore, verdict, checks, recommendations: recommend(verdict), checkedAt: new Date().toISOString(), trusted };
 }
 
-app.get('/', (req, res) => {
+app.get('/', (_req: Request, res: Response) => {
   res.send('ShieldCheck server is running');
 });
-const ageCache = new Map();
+
+const ageCache = new Map<string, { date: string | null; at: number }>();
 const SECOND_LEVEL = ['co', 'com', 'org', 'net', 'gov', 'ac', 'edu'];
 
-function registrable(host) {
+function registrable(host: string): string {
   const parts = host.split('.');
   if (parts.length <= 2) return host;
   const last = parts[parts.length - 1];
@@ -140,7 +178,7 @@ function registrable(host) {
   return parts.slice(-2).join('.');
 }
 
-async function getDomainDate(domain) {
+async function getDomainDate(domain: string): Promise<string | null> {
   const cached = ageCache.get(domain);
   if (cached && Date.now() - cached.at < 86400000) return cached.date;
   const response = await fetch('https://rdap.org/domain/' + domain, {
@@ -148,16 +186,17 @@ async function getDomainDate(domain) {
     signal: AbortSignal.timeout(3500),
   });
   if (!response.ok) throw new Error('RDAP ' + response.status);
-  const data = await response.json();
+  const data = (await response.json()) as { events?: { eventAction: string; eventDate: string }[] };
   const event = (data.events || []).find((e) => e.eventAction === 'registration');
   const date = event ? event.eventDate : null;
   ageCache.set(domain, { date, at: Date.now() });
   return date;
 }
-async function applyDomainAge(result) {
+
+async function applyDomainAge(result: CheckResult): Promise<void> {
   const host = result.host;
   if (/^\d{1,3}(\.\d{1,3}){3}$/.test(host)) return;
-  if (TRUSTED.some((d) => host === d || host.endsWith('.' + d))) return;
+  if (isTrusted(host)) return;
   try {
     const date = await getDomainDate(registrable(host));
     if (!date) return;
@@ -165,8 +204,8 @@ async function applyDomainAge(result) {
     if (!(days >= 0)) return;
     const years = Math.floor(days / 365);
 
-    const get = (n) => result.checks.find((c) => c.name === n);
-    const set = (c, status, safety, text) => {
+    const get = (n: string) => result.checks.find((c) => c.name === n) as Check;
+    const set = (c: Check, status: Status, safety: number, text: string) => {
       c.status = status;
       c.safety = safety;
       c.explanation = text;
@@ -195,23 +234,16 @@ async function applyDomainAge(result) {
     else if (days < 180) risk = Math.max(risk, 35);
     risk = Math.min(100, Math.max(0, risk));
 
-    const verdict = risk <= 30 ? 'Safe' : risk <= 60 ? 'Suspicious' : 'Risky';
-    if (verdict !== result.verdict) {
-      result.recommendations =
-        verdict === 'Safe'
-          ? ['You can open this link.', 'Still avoid entering passwords unless you trust the page.', 'Check the address bar for spelling mistakes.']
-          : verdict === 'Suspicious'
-          ? ['Open this link only if you trust the sender.', 'Do not enter passwords or payment details.', 'Search for the official site instead.']
-          : ['Do not open this link.', 'Never enter personal or payment details.', 'Report the message and delete it.'];
-    }
+    const verdict: Verdict = risk <= 30 ? 'Safe' : risk <= 60 ? 'Suspicious' : 'Risky';
+    if (verdict !== result.verdict) result.recommendations = recommend(verdict);
     result.riskScore = risk;
     result.verdict = verdict;
   } catch (err) {
-    console.error('Domain age lookup failed:', err.message);
+    console.error('Domain age lookup failed:', (err as Error).message);
   }
 }
 
-async function applyGoogle(result) {
+async function applyGoogle(result: CheckResult): Promise<void> {
   const key = process.env.SAFE_BROWSING_KEY;
   if (!key) return;
   try {
@@ -236,14 +268,14 @@ async function applyGoogle(result) {
       console.error('Safe Browsing error:', response.status);
       return;
     }
-    const data = await response.json();
+    const data = (await response.json()) as { matches?: { threatType: string }[] };
     result.googleChecked = true;
     if (!data.matches || !data.matches.length) return;
 
     const types = data.matches.map((m) => m.threatType);
     const phishing = types.includes('SOCIAL_ENGINEERING');
     const note = 'Google Safe Browsing lists this link as dangerous.';
-    const fail = (name) => {
+    const fail = (name: string) => {
       const c = result.checks.find((x) => x.name === name);
       if (c) {
         c.status = 'fail';
@@ -255,20 +287,19 @@ async function applyGoogle(result) {
     fail('Reputation');
     result.verdict = 'Risky';
     result.riskScore = Math.max(result.riskScore, 95);
-    result.recommendations = [
-      'Do not open this link.',
-      'Never enter personal or payment details.',
-      'Report the message and delete it.',
-    ];
+    result.recommendations = recommend('Risky');
   } catch (err) {
-    console.error('Safe Browsing failed:', err.message);
+    console.error('Safe Browsing failed:', (err as Error).message);
   }
 }
-const recentChecks = new Map();
-app.post('/api/check', async (req, res) => {
+
+const recentChecks = new Map<string, Promise<number>>();
+
+app.post('/api/check', async (req: Request, res: Response) => {
   const result = analyze(req.body && req.body.url);
   if (!result) {
-    return res.status(400).json({ error: 'Enter a valid link, e.g. https://example.com' });
+    res.status(400).json({ error: 'Enter a valid link, e.g. https://example.com' });
+    return;
   }
 
   await applyDomainAge(result);
@@ -278,7 +309,7 @@ app.post('/api/check', async (req, res) => {
   const token = header.startsWith('Bearer ') ? header.slice(7) : null;
   if (token) {
     try {
-      const payload = jwt.verify(token, process.env.JWT_SECRET);
+      const payload = jwt.verify(token, process.env.JWT_SECRET as string) as { id: number };
       const key = payload.id + '|' + result.url;
       let pending = recentChecks.get(key);
       if (!pending) {
@@ -287,54 +318,59 @@ app.post('/api/check', async (req, res) => {
             "SELECT id FROM checks WHERE user_id = $1 AND url = $2 AND created_at > NOW() - INTERVAL '60 seconds' ORDER BY id DESC LIMIT 1",
             [payload.id, result.url]
           );
-          if (recent.rows.length) return recent.rows[0].id;
+          if (recent.rows.length) return recent.rows[0].id as number;
           const saved = await pool.query(
             'INSERT INTO checks (user_id, url, host, verdict, risk_score, result) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id',
             [payload.id, result.url, result.host, result.verdict, result.riskScore, result]
           );
-          return saved.rows[0].id;
+          return saved.rows[0].id as number;
         })();
         recentChecks.set(key, pending);
         setTimeout(() => recentChecks.delete(key), 10000);
       }
       result.id = await pending;
     } catch (err) {
-      console.error(err.message);
+      console.error((err as Error).message);
     }
   }
 
   res.json(result);
 });
+
 (async () => {
   try {
     await pool.query('CREATE TABLE IF NOT EXISTS visitors (id TEXT PRIMARY KEY, created_at TIMESTAMPTZ DEFAULT NOW())');
   } catch (err) {
-    console.error('visitors table:', err.message);
+    console.error('visitors table:', (err as Error).message);
   }
 })();
 
-app.post('/api/stats/visit', async (req, res) => {
+app.post('/api/stats/visit', async (req: Request, res: Response) => {
   const id = String((req.body && req.body.id) || '');
-  if (!/^[A-Za-z0-9-]{16,64}$/.test(id)) return res.status(400).json({ error: 'Invalid id' });
+  if (!/^[A-Za-z0-9-]{16,64}$/.test(id)) {
+    res.status(400).json({ error: 'Invalid id' });
+    return;
+  }
   try {
     await pool.query('INSERT INTO visitors (id) VALUES ($1) ON CONFLICT DO NOTHING', [id]);
     const total = await pool.query('SELECT COUNT(*)::int AS n FROM visitors');
     res.json({ visitors: total.rows[0].n });
   } catch (err) {
-    console.error(err.message);
+    console.error((err as Error).message);
     res.status(500).json({ error: 'Something went wrong. Try again.' });
   }
 });
 
-app.get('/api/stats', async (req, res) => {
+app.get('/api/stats', async (_req: Request, res: Response) => {
   try {
     const total = await pool.query('SELECT COUNT(*)::int AS n FROM visitors');
     res.json({ visitors: total.rows[0].n });
   } catch (err) {
-    console.error(err.message);
+    console.error((err as Error).message);
     res.status(500).json({ error: 'Something went wrong. Try again.' });
   }
 });
+
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });

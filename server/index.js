@@ -19,6 +19,10 @@ const PORT = process.env.PORT || 5000;
      })
    );
 app.use(express.json());
+   const rateLimit = require('express-rate-limit');
+   app.set('trust proxy', 1);
+   app.use('/api/check', rateLimit({ windowMs: 60 * 1000, limit: 30, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many checks. Wait a minute and try again.' } }));
+   app.use('/api/auth', rateLimit({ windowMs: 15 * 60 * 1000, limit: 30, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many attempts. Try again in a few minutes.' } }));
 const { router: authRouter } = require('./auth');
 app.use('/api/auth', authRouter);
 const jwt = require('jsonwebtoken');

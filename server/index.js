@@ -27,7 +27,7 @@ const { router: authRouter } = require('./auth');
 app.use('/api/auth', authRouter);
 const jwt = require('jsonwebtoken');
 const pool = require('./db');
-const historyRouter = require('./history');
+   const historyRouter = require('./history').default;
 app.use('/api/history', historyRouter);
 
 const TRUSTED = [

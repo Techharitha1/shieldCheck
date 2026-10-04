@@ -1,24 +1,35 @@
-const express = require('express');
-const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken');
-const pool = require('./db');
+import express, { Request, Response, NextFunction } from 'express';
+import bcrypt from 'bcryptjs';
+import jwt from 'jsonwebtoken';
+import pool from './db';
+
+export interface AuthRequest extends Request {
+  userId?: number;
+}
+
+interface UserRow {
+  id: number;
+  name: string;
+  email: string;
+  password_hash?: string;
+}
 
 const router = express.Router();
 
-function makeToken(user) {
-  return jwt.sign({ id: user.id }, process.env.JWT_SECRET, { expiresIn: '7d' });
+function makeToken(user: UserRow): string {
+  return jwt.sign({ id: user.id }, process.env.JWT_SECRET as string, { expiresIn: '7d' });
 }
 
-function publicUser(user) {
+function publicUser(user: UserRow) {
   return { id: user.id, name: user.name, email: user.email };
 }
 
-function requireAuth(req, res, next) {
+function requireAuth(req: AuthRequest, res: Response, next: NextFunction) {
   const header = req.headers.authorization || '';
   const token = header.startsWith('Bearer ') ? header.slice(7) : null;
   if (!token) return res.status(401).json({ error: 'Please log in first' });
   try {
-    const payload = jwt.verify(token, process.env.JWT_SECRET);
+    const payload = jwt.verify(token, process.env.JWT_SECRET as string) as { id: number };
     req.userId = payload.id;
     next();
   } catch {
@@ -26,7 +37,7 @@ function requireAuth(req, res, next) {
   }
 }
 
-router.post('/signup', async (req, res) => {
+router.post('/signup', async (req: Request, res: Response) => {
   try {
     const name = String((req.body && req.body.name) || '').trim();
     const email = String((req.body && req.body.email) || '').trim().toLowerCase();
@@ -42,44 +53,44 @@ router.post('/signup', async (req, res) => {
     if (exists.rows.length) return res.status(409).json({ error: 'An account with this email already exists' });
 
     const hash = await bcrypt.hash(password, 10);
-    const created = await pool.query(
+    const created = await pool.query<UserRow>(
       'INSERT INTO users (name, email, password_hash) VALUES ($1, $2, $3) RETURNING id, name, email',
       [name, email, hash]
     );
     const user = created.rows[0];
     res.status(201).json({ token: makeToken(user), user: publicUser(user) });
   } catch (err) {
-    console.error(err.message);
+    console.error((err as Error).message);
     res.status(500).json({ error: 'Something went wrong. Try again.' });
   }
 });
 
-router.post('/login', async (req, res) => {
+router.post('/login', async (req: Request, res: Response) => {
   try {
     const email = String((req.body && req.body.email) || '').trim().toLowerCase();
     const password = String((req.body && req.body.password) || '');
 
-    const found = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
+    const found = await pool.query<UserRow>('SELECT * FROM users WHERE email = $1', [email]);
     const user = found.rows[0];
-    const ok = user && (await bcrypt.compare(password, user.password_hash));
+    const ok = user && user.password_hash && (await bcrypt.compare(password, user.password_hash));
     if (!ok) return res.status(401).json({ error: 'Email or password is incorrect' });
 
     res.json({ token: makeToken(user), user: publicUser(user) });
   } catch (err) {
-    console.error(err.message);
+    console.error((err as Error).message);
     res.status(500).json({ error: 'Something went wrong. Try again.' });
   }
 });
 
-router.get('/me', requireAuth, async (req, res) => {
+router.get('/me', requireAuth, async (req: AuthRequest, res: Response) => {
   try {
-    const found = await pool.query('SELECT id, name, email FROM users WHERE id = $1', [req.userId]);
+    const found = await pool.query<UserRow>('SELECT id, name, email FROM users WHERE id = $1', [req.userId]);
     if (!found.rows.length) return res.status(401).json({ error: 'Account not found' });
     res.json({ user: found.rows[0] });
   } catch (err) {
-    console.error(err.message);
+    console.error((err as Error).message);
     res.status(500).json({ error: 'Something went wrong. Try again.' });
   }
 });
 
-module.exports = { router, requireAuth };
+export { router, requireAuth };

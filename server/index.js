@@ -301,7 +301,36 @@ app.post('/api/check', async (req, res) => {
 
   res.json(result);
 });
+(async () => {
+  try {
+    await pool.query('CREATE TABLE IF NOT EXISTS visitors (id TEXT PRIMARY KEY, created_at TIMESTAMPTZ DEFAULT NOW())');
+  } catch (err) {
+    console.error('visitors table:', err.message);
+  }
+})();
 
+app.post('/api/stats/visit', async (req, res) => {
+  const id = String((req.body && req.body.id) || '');
+  if (!/^[A-Za-z0-9-]{16,64}$/.test(id)) return res.status(400).json({ error: 'Invalid id' });
+  try {
+    await pool.query('INSERT INTO visitors (id) VALUES ($1) ON CONFLICT DO NOTHING', [id]);
+    const total = await pool.query('SELECT COUNT(*)::int AS n FROM visitors');
+    res.json({ visitors: total.rows[0].n });
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).json({ error: 'Something went wrong. Try again.' });
+  }
+});
+
+app.get('/api/stats', async (req, res) => {
+  try {
+    const total = await pool.query('SELECT COUNT(*)::int AS n FROM visitors');
+    res.json({ visitors: total.rows[0].n });
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).json({ error: 'Something went wrong. Try again.' });
+  }
+});
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });

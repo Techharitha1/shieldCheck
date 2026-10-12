@@ -6,6 +6,7 @@ import Features from './components/Features'
 import HowItWorks from './components/HowItWorks'
 import Footer from './components/Footer'
 import ResultPage from './pages/ResultPage'
+import MessageResultPage from './pages/MessageResultPage'
 import HistoryPage from './pages/HistoryPage'
 import DashboardPage from './pages/DashboardPage'
 import LearnPage from './pages/LearnPage'
@@ -37,7 +38,29 @@ function ScrollToTop() {
 }
 
 function App() {
-  return <BrowserRouter><ErrorBoundary><ScrollToTop /><Routes><Route path="/" element={<LandingPage />} /><Route path="/result" element={<ResultPage />} /><Route path="/result/:id" element={<ResultPage />} /><Route path="/history" element={<HistoryPage />} /><Route path="/dashboard" element={<DashboardPage />} /><Route path="/learn" element={<LearnPage />} /><Route path="/about" element={<AboutPage />} /><Route path="/contact" element={<Navigate replace to="/about#contact" />} /><Route path="/auth" element={<AuthPage />} /><Route path="/login" element={<Navigate replace to="/auth?tab=login" />} /><Route path="/signup" element={<Navigate replace to="/auth?tab=signup" />} /><Route path="*" element={<NotFoundPage />} /><Route path="/result/*" element={<Navigate replace to="/" />} /></Routes></ErrorBoundary></BrowserRouter>
+  return (
+    <BrowserRouter>
+      <ErrorBoundary>
+        <ScrollToTop />
+        <Routes>
+          <Route path="/" element={<LandingPage />} />
+          <Route path="/result" element={<ResultPage />} />
+          <Route path="/result/:id" element={<ResultPage />} />
+          <Route path="/message-result" element={<MessageResultPage />} />
+          <Route path="/history" element={<HistoryPage />} />
+          <Route path="/dashboard" element={<DashboardPage />} />
+          <Route path="/learn" element={<LearnPage />} />
+          <Route path="/about" element={<AboutPage />} />
+          <Route path="/contact" element={<Navigate replace to="/about#contact" />} />
+          <Route path="/auth" element={<AuthPage />} />
+          <Route path="/login" element={<Navigate replace to="/auth?tab=login" />} />
+          <Route path="/signup" element={<Navigate replace to="/auth?tab=signup" />} />
+          <Route path="*" element={<NotFoundPage />} />
+          <Route path="/result/*" element={<Navigate replace to="/" />} />
+        </Routes>
+      </ErrorBoundary>
+    </BrowserRouter>
+  )
 }
 
 export default App

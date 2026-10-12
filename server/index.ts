@@ -8,7 +8,7 @@ import { router as authRouter } from './auth';
 import historyRouter from './history';
 import { analyze, isTrusted, recommend } from './analyze';
 import type { Check, CheckResult, Status, Verdict } from './analyze';
-
+import { analyzeMessage } from './messageCheck';
 dotenv.config();
 
 const app = express();
@@ -165,18 +165,21 @@ async function applyGoogle(result: CheckResult): Promise<void> {
     console.error('Safe Browsing failed:', (err as Error).message);
   }
 }
-
+async function runCheck(raw: unknown): Promise<CheckResult | null> {
+  const result = analyze(raw);
+  if (!result) return null;
+  await applyDomainAge(result);
+  await applyGoogle(result);
+  return result;
+}
 const recentChecks = new Map<string, Promise<number>>();
 
 app.post('/api/check', async (req: Request, res: Response) => {
-  const result = analyze(req.body && req.body.url);
+    const result = await runCheck(req.body && req.body.url);
   if (!result) {
     res.status(400).json({ error: 'Enter a valid link, e.g. https://example.com' });
     return;
   }
-
-  await applyDomainAge(result);
-  await applyGoogle(result);
 
   const header = req.headers.authorization || '';
   const token = header.startsWith('Bearer ') ? header.slice(7) : null;
@@ -243,7 +246,25 @@ app.get('/api/stats', async (_req: Request, res: Response) => {
     res.status(500).json({ error: 'Something went wrong. Try again.' });
   }
 });
+app.use('/api/check-message', rateLimit({ windowMs: 60 * 1000, limit: 10, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many checks. Wait a minute and try again.' } }));
 
+app.post('/api/check-message', async (req: Request, res: Response) => {
+  const message = String((req.body && req.body.message) || '').trim();
+  if (!message) {
+    res.status(400).json({ error: 'Paste a message to check.' });
+    return;
+  }
+  if (message.length > 2000) {
+    res.status(400).json({ error: 'The message is too long. Keep it under 2000 characters.' });
+    return;
+  }
+  try {
+    res.json(await analyzeMessage(message, runCheck));
+  } catch (err) {
+    console.error((err as Error).message);
+    res.status(500).json({ error: 'Something went wrong. Try again.' });
+  }
+});
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });

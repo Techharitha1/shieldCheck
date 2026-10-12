@@ -7,7 +7,7 @@
      "dev": "tsx watch index.ts",
      "build": "tsc",
      "start": "node dist/index.js",
-     "test": "tsx --test analyze.test.ts"
+     "test": "tsx --test analyze.test.ts message.test.ts phrases.test.ts messageCheck.test.ts"
    },
   "keywords": [],
   "author": "",

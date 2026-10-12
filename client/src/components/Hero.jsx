@@ -4,32 +4,80 @@ import ShieldAnimation from './ShieldAnimation'
 import isValidLink from '../utils/validateLink'
 import './Hero.css'
 
+const MAX_MESSAGE = 2000
+
 function Hero() {
   const navigate = useNavigate()
+  const [mode, setMode] = useState('link')
   const [invalid, setInvalid] = useState(false)
-  const handleSubmit = (event) => {
+  const [message, setMessage] = useState('')
+
+  const shake = () => {
+    setInvalid(true)
+    window.setTimeout(() => setInvalid(false), 550)
+  }
+
+  const handleLink = (event) => {
     event.preventDefault()
     const cleanedLink = isValidLink(event.currentTarget.elements.target.value)
     if (!cleanedLink) {
-      setInvalid(true)
-      window.setTimeout(() => setInvalid(false), 550)
+      shake()
       return
     }
     navigate(`/result?url=${encodeURIComponent(cleanedLink)}`)
   }
+
+  const handleMessage = (event) => {
+    event.preventDefault()
+    const text = message.trim()
+    if (!text) {
+      shake()
+      return
+    }
+    navigate('/message-result', { state: { message: text } })
+  }
+
+  const switchMode = (next) => {
+    setMode(next)
+    setInvalid(false)
+  }
+
   return (
     <section className="hero" id="home">
       <div className="container hero-grid">
         <div className="hero-copy reveal is-visible">
           <h1>Check before<br /><span>you trust.</span></h1>
-          <p className="hero-subtitle">ShieldCheck helps you spot risky links before they become a problem.</p>
-          <form className={`check-form ${invalid ? 'input-shake' : ''}`} onSubmit={handleSubmit}>
-            <label className="sr-only" htmlFor="target">Link to check</label>
-            <input id="target" name="target" placeholder="Paste a link, e.g. https://example.com" aria-invalid={invalid} onChange={() => setInvalid(false)} />
-            <button className="button button-primary" type="submit">Check now <span aria-hidden="true">→</span></button>
-          </form>
-          {invalid && <p className="input-error" role="alert">Enter a full link, e.g. myntra.com</p>}
-          <div className="trust-note"><span className="lock-icon" aria-hidden="true">✓</span> Private by design <span className="note-divider" /> No account needed</div>
+          <p className="hero-subtitle">ShieldCheck helps you spot risky links and scam messages before they become a problem.</p>
+
+          <div className="check-tabs" role="tablist" aria-label="What do you want to check?">
+            <button type="button" role="tab" aria-selected={mode === 'link'} className={`check-tab ${mode === 'link' ? 'is-active' : ''}`} onClick={() => switchMode('link')}>Check a link</button>
+            <button type="button" role="tab" aria-selected={mode === 'message'} className={`check-tab ${mode === 'message' ? 'is-active' : ''}`} onClick={() => switchMode('message')}>Check a message</button>
+          </div>
+
+          {mode === 'link' ? (
+            <>
+              <form className={`check-form ${invalid ? 'input-shake' : ''}`} onSubmit={handleLink}>
+                <label className="sr-only" htmlFor="target">Link to check</label>
+                <input id="target" name="target" placeholder="Paste a link, e.g. https://example.com" aria-invalid={invalid} onChange={() => setInvalid(false)} />
+                <button className="button button-primary" type="submit">Check now <span aria-hidden="true">{'\u2192'}</span></button>
+              </form>
+              {invalid && <p className="input-error" role="alert">Enter a full link, e.g. myntra.com</p>}
+            </>
+          ) : (
+            <>
+              <form className={`message-form ${invalid ? 'input-shake' : ''}`} onSubmit={handleMessage}>
+                <label className="sr-only" htmlFor="message">Message to check</label>
+                <textarea id="message" name="message" maxLength={MAX_MESSAGE} value={message} placeholder="Paste an SMS or WhatsApp message you are unsure about" aria-invalid={invalid} onChange={(event) => { setMessage(event.target.value); setInvalid(false) }} />
+                <div className="message-form-footer">
+                  <span className="message-count">{message.length} / {MAX_MESSAGE}</span>
+                  <button className="button button-primary" type="submit">Check message <span aria-hidden="true">{'\u2192'}</span></button>
+                </div>
+              </form>
+              {invalid && <p className="input-error" role="alert">Paste a message to check.</p>}
+            </>
+          )}
+
+          <div className="trust-note"><span className="lock-icon" aria-hidden="true">{'\u2713'}</span> Private by design <span className="note-divider" /> No account needed</div>
           <div className="signal-strip" aria-label="What ShieldCheck uses">
             <div><strong>6</strong><span>safety checks</span></div>
             <span className="signal-divider" />

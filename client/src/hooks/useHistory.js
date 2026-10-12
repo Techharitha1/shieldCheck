@@ -72,7 +72,8 @@ function useHistory() {
     const results = Array.isArray(result) ? result : [result]
     const savedResults = results.map((item) => ({ ...item, id: item.id || `${Date.now()}-${Math.random().toString(36).slice(2, 8)}` }))
     const savedIds = new Set(savedResults.map((item) => item.id))
-    setGuestHistory([...savedResults, ...guestHistory.filter((item) => !savedIds.has(item.id))].slice(0, 20))
+    const savedUrls = new Set(savedResults.map((item) => item.url))
+    setGuestHistory([...savedResults, ...guestHistory.filter((item) => !savedIds.has(item.id) && !savedUrls.has(item.url))].slice(0, 20))
     return Array.isArray(result) ? savedResults : savedResults[0]
   }, [user])
 
